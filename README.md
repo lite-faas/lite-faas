@@ -40,9 +40,12 @@ LiteFaaS/
 git clone https://github.com/your-org/litefaas.git
 cd litefaas
 
-# Installer
+# Installer la dernière version stable
 chmod +x install.sh
 ./install.sh
+
+# Ou installer la version de développement
+./install.sh dev
 
 # Démarrer
 ./bin/litefaas
@@ -191,11 +194,14 @@ Les binaires précompilés sont automatiquement générés pour chaque release v
 ### Téléchargement
 
 ```bash
-# Dernière version
+# Dernière version stable
 curl -L -o litefaas https://github.com/litefaas/litefaas/releases/latest/download/litefaas-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
 
 # Version spécifique
 curl -L -o litefaas https://github.com/litefaas/litefaas/releases/download/v1.0.0/litefaas-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/')
+
+# Version de développement (dernière build de la branche dev)
+# Note: Les builds de développement sont disponibles dans les artifacts GitHub Actions
 ```
 
 ## Support

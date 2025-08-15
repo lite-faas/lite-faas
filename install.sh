@@ -75,11 +75,16 @@ echo "containerd installé avec succès"
 echo "Téléchargement du binaire LiteFaaS..."
 
 # Déterminer la version à télécharger
-LATEST_VERSION=$(curl -s https://api.github.com/repos/litefaas/litefaas/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-
-if [ -z "$LATEST_VERSION" ]; then
-    echo "Impossible de déterminer la dernière version, utilisation de la version de développement..."
+if [ "$1" = "dev" ]; then
+    echo "Téléchargement de la version de développement..."
     LATEST_VERSION="dev"
+else
+    LATEST_VERSION=$(curl -s https://api.github.com/repos/litefaas/litefaas/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+
+    if [ -z "$LATEST_VERSION" ]; then
+        echo "Impossible de déterminer la dernière version, utilisation de la version de développement..."
+        LATEST_VERSION="dev"
+    fi
 fi
 
 # Déterminer l'architecture
