@@ -42,6 +42,8 @@ LiteFaaS/
 
 ### Installation rapide
 
+#### Option 1: Installation depuis le code source (recommandé pour le développement)
+
 ```bash
 # Cloner le repository
 git clone https://github.com/your-org/litefaas.git
@@ -53,6 +55,21 @@ chmod +x install.sh
 
 # Ou installer la version de développement
 ./install.sh dev
+
+# Démarrer
+./bin/litefaas
+```
+
+#### Option 2: Installation standalone (recommandé pour la production)
+
+```bash
+# Télécharger et exécuter le script d'installation
+curl -fsSL https://raw.githubusercontent.com/litefaas/litefaas/main/install-standalone.sh | bash
+
+# Ou télécharger le script et l'exécuter
+wget https://raw.githubusercontent.com/litefaas/litefaas/main/install-standalone.sh
+chmod +x install-standalone.sh
+./install-standalone.sh
 
 # Démarrer
 ./bin/litefaas

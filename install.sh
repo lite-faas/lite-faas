@@ -122,11 +122,20 @@ if [ "$1" = "dev" ]; then
     echo "Téléchargement de la version de développement..."
     LATEST_VERSION="dev"
 else
-    LATEST_VERSION=$(curl -s https://api.github.com/repos/litefaas/litefaas/releases/latest | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+    echo "Recherche de la dernière version stable..."
+    LATEST_VERSION=$(curl -s https://api.github.com/repos/litefaas/litefaas/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
 
-    if [ -z "$LATEST_VERSION" ]; then
-        echo "Impossible de déterminer la dernière version, utilisation de la version de développement..."
+    if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
+        echo "⚠️  Impossible de déterminer la dernière version depuis GitHub."
+        echo "   Cela peut être dû à:"
+        echo "   - Aucune release publiée"
+        echo "   - Problème de connectivité réseau"
+        echo "   - Repository privé ou inexistant"
+        echo ""
+        echo "   Utilisation de la version de développement..."
         LATEST_VERSION="dev"
+    else
+        echo "✅ Version trouvée: $LATEST_VERSION"
     fi
 fi
 
@@ -180,6 +189,15 @@ if [ "$LATEST_VERSION" = "dev" ]; then
     fi
 
     echo "Compilation de LiteFaaS..."
+    # Vérifier si nous sommes dans le bon répertoire
+    if [ ! -f "go.mod" ]; then
+        echo "❌ Fichier go.mod non trouvé. Assurez-vous d'être dans le répertoire du projet LiteFaaS."
+        echo "   Cloner le repository d'abord:"
+        echo "   git clone https://github.com/litefaas/litefaas.git"
+        echo "   cd litefaas"
+        exit 1
+    fi
+
     go mod download
     go build -o bin/litefaas cmd/litefaas/main.go
 else
@@ -208,6 +226,18 @@ else
         fi
 
         echo "Compilation de LiteFaaS..."
+        # Vérifier si nous sommes dans le bon répertoire
+        if [ ! -f "go.mod" ]; then
+            echo "❌ Fichier go.mod non trouvé. Assurez-vous d'être dans le répertoire du projet LiteFaaS."
+            echo "   Cloner le repository d'abord:"
+            echo "   git clone https://github.com/litefaas/litefaas.git"
+            echo "   cd litefaas"
+            echo ""
+            echo "   Ou télécharger directement le binaire depuis GitHub:"
+            echo "   curl -L -o litefaas https://github.com/litefaas/litefaas/releases/latest/download/litefaas-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/')"
+            exit 1
+        fi
+
         go mod download
         go build -o bin/litefaas cmd/litefaas/main.go
     fi
