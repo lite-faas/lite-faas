@@ -22,17 +22,12 @@ jobs:
             - name: Download dependencies
               run: go mod download
 
-
     build:
         runs-on: ${{ matrix.os }}
         strategy:
             matrix:
                 os: [ubuntu-latest, macos-latest]
-                goarch: [amd64, arm64]
-                exclude:
-                    - os: macos-latest
-                      goarch: arm64
-                      # Exclure arm64 sur macOS car pas supporté dans ce workflow
+                goarch: [amd64]
 
         steps:
             - uses: actions/checkout@v4
@@ -97,16 +92,6 @@ jobs:
                   GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
               with:
                   upload_url: ${{ steps.create_release.outputs.upload_url }}
-                  asset_path: ./litefaas-linux-arm64/litefaas-linux-arm64
-                  asset_name: litefaas-linux-arm64
-                  asset_content_type: application/octet-stream
-
-            - name: Upload Release Assets
-              uses: actions/upload-release-asset@v1
-              env:
-                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-              with:
-                  upload_url: ${{ steps.create_release.outputs.upload_url }}
                   asset_path: ./litefaas-darwin-amd64/litefaas-darwin-amd64
                   asset_name: litefaas-darwin-amd64
                   asset_content_type: application/octet-stream
@@ -128,6 +113,5 @@ jobs:
                   name: dev-builds-${{ github.sha }}
                   path: |
                       litefaas-linux-amd64/
-                      litefaas-linux-arm64/
                       litefaas-darwin-amd64/
                   retention-days: 30

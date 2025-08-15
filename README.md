@@ -188,7 +188,7 @@ Les binaires précompilés sont automatiquement générés pour chaque release v
 
 ### Plateformes supportées
 
--   Linux (amd64, arm64)
+-   Linux (amd64)
 -   macOS (amd64)
 
 ### Téléchargement

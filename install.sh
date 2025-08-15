@@ -93,7 +93,8 @@ case $ARCH in
         BINARY_ARCH="amd64"
         ;;
     aarch64|arm64)
-        BINARY_ARCH="arm64"
+        echo "Architecture ARM64 non supportée. Seule l'architecture AMD64 est supportée."
+        exit 1
         ;;
     *)
         echo "Architecture non supportée: $ARCH"
