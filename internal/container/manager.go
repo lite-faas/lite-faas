@@ -47,7 +47,7 @@ func (m *Manager) CreateFunctionContainer(ctx context.Context, config *Container
 		return fmt.Errorf("failed to pull image: %w", err)
 	}
 
-	container, err := m.client.NewContainer(
+	_, err = m.client.NewContainer(
 		ctx,
 		config.Name,
 		containerd.WithImage(image),
@@ -63,12 +63,6 @@ func (m *Manager) CreateFunctionContainer(ctx context.Context, config *Container
 				},
 			}),
 			oci.WithHostNamespace(specs.NetworkNamespace),
-			oci.WithPortMap(map[string]containerd.PortMapping{
-				"8080/tcp": {
-					HostIP:   "127.0.0.1",
-					HostPort: fmt.Sprintf("%d", config.Port),
-				},
-			}),
 		),
 	)
 	if err != nil {
