@@ -33,6 +33,13 @@ LiteFaaS/
 -   containerd
 -   SQLite
 
+### Distributions supportées
+
+-   Ubuntu/Debian
+-   Alpine Linux
+-   RHEL/CentOS/Fedora
+-   macOS (via Homebrew)
+
 ### Installation rapide
 
 ```bash

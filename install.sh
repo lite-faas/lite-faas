@@ -29,28 +29,70 @@ case $OS in
             echo "Téléchargement et installation de containerd..."
 
             # Détection de la distribution
-            if [ -f /etc/debian_version ]; then
-                # Debian/Ubuntu
-                sudo apt-get update
-                sudo apt-get install -y containerd.io
+            if [ -f /etc/os-release ]; then
+                . /etc/os-release
+                DISTRO=$ID
+                VERSION=$VERSION_ID
+            elif [ -f /etc/debian_version ]; then
+                DISTRO="debian"
             elif [ -f /etc/redhat-release ]; then
-                # RHEL/CentOS/Fedora
-                if command -v dnf &> /dev/null; then
-                    sudo dnf install -y containerd
-                else
-                    sudo yum install -y containerd
-                fi
+                DISTRO="rhel"
             else
-                # Installation manuelle
-                CONTAINERD_VERSION="1.7.0"
-                wget https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz
-                sudo tar -C /usr/local -xzf containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz
-                sudo systemctl enable containerd
-                sudo systemctl start containerd
-                rm containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz
+                DISTRO="unknown"
             fi
+
+            case $DISTRO in
+                ubuntu|debian)
+                    echo "Distribution détectée: $DISTRO"
+                    # Ajouter le repository Docker officiel
+                    sudo apt-get update
+                    sudo apt-get install -y ca-certificates curl gnupg lsb-release
+                    sudo mkdir -p /etc/apt/keyrings
+                    curl -fsSL https://download.docker.com/linux/$DISTRO/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+                    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$DISTRO $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+                    sudo apt-get update
+                    sudo apt-get install -y containerd.io
+                    ;;
+                alpine)
+                    echo "Distribution détectée: Alpine Linux"
+                    # Alpine utilise apk
+                    sudo apk update
+                    sudo apk add containerd
+                    # Créer le répertoire de configuration
+                    sudo mkdir -p /etc/containerd
+                    ;;
+                rhel|centos|fedora|rocky|almalinux)
+                    echo "Distribution détectée: $DISTRO"
+                    if command -v dnf &> /dev/null; then
+                        sudo dnf install -y containerd
+                    else
+                        sudo yum install -y containerd
+                    fi
+                    ;;
+                *)
+                    echo "Distribution non reconnue: $DISTRO, installation manuelle..."
+                    # Installation manuelle
+                    CONTAINERD_VERSION="1.7.0"
+                    wget https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz
+                    sudo tar -C /usr/local -xzf containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz
+                    sudo systemctl enable containerd
+                    sudo systemctl start containerd
+                    rm containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz
+                    ;;
+            esac
         else
             echo "containerd est déjà installé"
+            # Définir DISTRO même si containerd est déjà installé
+            if [ -f /etc/os-release ]; then
+                . /etc/os-release
+                DISTRO=$ID
+            elif [ -f /etc/debian_version ]; then
+                DISTRO="debian"
+            elif [ -f /etc/redhat-release ]; then
+                DISTRO="rhel"
+            else
+                DISTRO="unknown"
+            fi
         fi
         ;;
     Darwin)
@@ -60,6 +102,7 @@ case $OS in
         else
             echo "containerd est déjà installé"
         fi
+        DISTRO="darwin"
         ;;
 esac
 
@@ -172,8 +215,26 @@ fi
 
 # Création des répertoires nécessaires
 echo "Création des répertoires nécessaires..."
-sudo mkdir -p /var/lib/litefaas
-sudo chown $USER:$USER /var/lib/litefaas
+
+case $DISTRO in
+    alpine)
+        # Alpine peut avoir des contraintes sur /var/lib
+        sudo mkdir -p /var/lib/litefaas
+        # Vérifier si l'utilisateur existe
+        if id "$USER" >/dev/null 2>&1; then
+            sudo chown $USER:$USER /var/lib/litefaas
+        else
+            # Sur Alpine, l'utilisateur peut être différent
+            sudo chown root:root /var/lib/litefaas
+            sudo chmod 755 /var/lib/litefaas
+        fi
+        ;;
+    *)
+        # Ubuntu et autres distributions
+        sudo mkdir -p /var/lib/litefaas
+        sudo chown $USER:$USER /var/lib/litefaas
+        ;;
+esac
 
 # Configuration de containerd
 echo "Configuration de containerd..."
@@ -182,10 +243,67 @@ if [ ! -f /etc/containerd/config.toml ]; then
     containerd config default | sudo tee /etc/containerd/config.toml > /dev/null
 fi
 
-# Redémarrer containerd pour appliquer la configuration
-if command -v systemctl &> /dev/null; then
-    sudo systemctl restart containerd
+# Démarrer/redémarrer containerd selon la distribution
+case $DISTRO in
+    alpine)
+        echo "Configuration pour Alpine Linux..."
+        # Alpine utilise openrc ou systemd selon la version
+        if command -v systemctl &> /dev/null; then
+            sudo systemctl enable containerd
+            sudo systemctl restart containerd
+        elif command -v rc-update &> /dev/null; then
+            sudo rc-update add containerd default
+            sudo rc-service containerd start
+        else
+            echo "Démarrage manuel de containerd..."
+            sudo containerd &
+        fi
+        ;;
+    *)
+        # Ubuntu et autres distributions avec systemd
+        if command -v systemctl &> /dev/null; then
+            sudo systemctl enable containerd
+            sudo systemctl restart containerd
+        else
+            echo "Démarrage manuel de containerd..."
+            sudo containerd &
+        fi
+        ;;
+esac
+
+# Vérification finale
+echo "Vérification de l'installation..."
+
+# Vérifier que containerd fonctionne
+if command -v containerd &> /dev/null; then
+    echo "✅ containerd installé"
+else
+    echo "❌ containerd non trouvé"
+    exit 1
 fi
 
-echo "Installation terminée!"
+# Vérifier que le binaire existe
+if [ -f "bin/litefaas" ]; then
+    echo "✅ Binaire LiteFaaS trouvé"
+else
+    echo "❌ Binaire LiteFaaS non trouvé"
+    exit 1
+fi
+
+# Vérifier les permissions
+if [ -d "/var/lib/litefaas" ]; then
+    echo "✅ Répertoire de données créé"
+else
+    echo "❌ Répertoire de données non créé"
+    exit 1
+fi
+
+echo ""
+echo "🎉 Installation terminée avec succès!"
+echo "Distribution détectée: $DISTRO"
 echo "Pour démarrer LiteFaaS: ./bin/litefaas"
+echo ""
+echo "Note: Si vous utilisez Alpine Linux, assurez-vous que containerd est démarré:"
+echo "  - Avec systemd: sudo systemctl start containerd"
+echo "  - Avec openrc: sudo rc-service containerd start"
+echo "  - Manuellement: sudo containerd &"
