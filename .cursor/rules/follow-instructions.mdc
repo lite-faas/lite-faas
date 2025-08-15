@@ -1,0 +1,7 @@
+---
+alwaysApply: true
+---
+
+Toujours respecter les contraintes décrites dans le fichier `instructions.md` à la racine du projet.
+Avant de proposer du code, vérifie que la solution est conforme à ces règles.
+Si une règle semble en conflit avec la demande, signale-la.

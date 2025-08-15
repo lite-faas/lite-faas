@@ -1,0 +1,9 @@
+{
+    "name": "litefaas-function",
+    "version": "1.0.0",
+    "description": "LiteFaaS Node.js function template",
+    "main": "function.js",
+    "dependencies": {
+        "express": "^4.18.2"
+    }
+}
