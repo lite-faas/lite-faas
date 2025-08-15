@@ -118,25 +118,20 @@ echo "containerd installé avec succès"
 echo "Téléchargement du binaire LiteFaaS..."
 
 # Déterminer la version à télécharger
-if [ "$1" = "dev" ]; then
-    echo "Téléchargement de la version de développement..."
+echo "Recherche de la dernière version stable..."
+LATEST_VERSION=$(curl -s https://api.github.com/repos/litefaas/litefaas/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
+
+if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
+    echo "⚠️  Impossible de déterminer la dernière version depuis GitHub."
+    echo "   Cela peut être dû à:"
+    echo "   - Aucune release publiée"
+    echo "   - Problème de connectivité réseau"
+    echo "   - Repository privé ou inexistant"
+    echo ""
+    echo "   Utilisation de la version de développement..."
     LATEST_VERSION="dev"
 else
-    echo "Recherche de la dernière version stable..."
-    LATEST_VERSION=$(curl -s https://api.github.com/repos/litefaas/litefaas/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-
-    if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
-        echo "⚠️  Impossible de déterminer la dernière version depuis GitHub."
-        echo "   Cela peut être dû à:"
-        echo "   - Aucune release publiée"
-        echo "   - Problème de connectivité réseau"
-        echo "   - Repository privé ou inexistant"
-        echo ""
-        echo "   Utilisation de la version de développement..."
-        LATEST_VERSION="dev"
-    else
-        echo "✅ Version trouvée: $LATEST_VERSION"
-    fi
+    echo "✅ Version trouvée: $LATEST_VERSION"
 fi
 
 # Déterminer l'architecture
@@ -169,77 +164,33 @@ mkdir -p bin
 
 # Télécharger le binaire
 BINARY_NAME="litefaas-${BINARY_OS}-${BINARY_ARCH}"
+
 if [ "$LATEST_VERSION" = "dev" ]; then
-    echo "Téléchargement de la version de développement..."
-    # Pour la version de développement, on compile localement
-    if ! command -v go &> /dev/null; then
-        echo "Installation de Go..."
-        case $OS in
-            Linux)
-                wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
-                sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
-                echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-                export PATH=$PATH:/usr/local/go/bin
-                rm go1.21.0.linux-amd64.tar.gz
-                ;;
-            Darwin)
-                brew install go
-                ;;
-        esac
-    fi
-
-    echo "Compilation de LiteFaaS..."
-    # Vérifier si nous sommes dans le bon répertoire
-    if [ ! -f "go.mod" ]; then
-        echo "❌ Fichier go.mod non trouvé. Assurez-vous d'être dans le répertoire du projet LiteFaaS."
-        echo "   Cloner le repository d'abord:"
-        echo "   git clone https://github.com/litefaas/litefaas.git"
-        echo "   cd litefaas"
-        exit 1
-    fi
-
-    go mod download
-    go build -o bin/litefaas cmd/litefaas/main.go
+    echo "❌ Aucune release stable disponible."
+    echo "   Pour utiliser la version de développement, clonez le repository et compilez localement:"
+    echo "   git clone https://github.com/litefaas/litefaas.git"
+    echo "   cd litefaas"
+    echo "   go build -o bin/litefaas cmd/litefaas/main.go"
+    echo ""
+    echo "   Ou attendez qu'une release soit publiée sur GitHub."
+    exit 1
 else
     echo "Téléchargement de la version $LATEST_VERSION..."
     DOWNLOAD_URL="https://github.com/litefaas/litefaas/releases/download/${LATEST_VERSION}/${BINARY_NAME}"
 
     if curl -L -o bin/litefaas "$DOWNLOAD_URL"; then
         chmod +x bin/litefaas
-        echo "Binaire téléchargé avec succès"
+        echo "✅ Binaire téléchargé avec succès"
     else
-        echo "Échec du téléchargement, compilation locale..."
-        if ! command -v go &> /dev/null; then
-            echo "Installation de Go..."
-            case $OS in
-                Linux)
-                    wget https://go.dev/dl/go1.21.0.linux-amd64.tar.gz
-                    sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
-                    echo 'export PATH=$PATH:/usr/local/go/bin' >> ~/.bashrc
-                    export PATH=$PATH:/usr/local/go/bin
-                    rm go1.21.0.linux-amd64.tar.gz
-                    ;;
-                Darwin)
-                    brew install go
-                    ;;
-            esac
-        fi
-
-        echo "Compilation de LiteFaaS..."
-        # Vérifier si nous sommes dans le bon répertoire
-        if [ ! -f "go.mod" ]; then
-            echo "❌ Fichier go.mod non trouvé. Assurez-vous d'être dans le répertoire du projet LiteFaaS."
-            echo "   Cloner le repository d'abord:"
-            echo "   git clone https://github.com/litefaas/litefaas.git"
-            echo "   cd litefaas"
-            echo ""
-            echo "   Ou télécharger directement le binaire depuis GitHub:"
-            echo "   curl -L -o litefaas https://github.com/litefaas/litefaas/releases/latest/download/litefaas-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/')"
-            exit 1
-        fi
-
-        go mod download
-        go build -o bin/litefaas cmd/litefaas/main.go
+        echo "❌ Échec du téléchargement du binaire"
+        echo "   URL: $DOWNLOAD_URL"
+        echo "   Vérifiez que la release existe et que vous avez accès à Internet."
+        echo ""
+        echo "   Pour compiler localement:"
+        echo "   git clone https://github.com/litefaas/litefaas.git"
+        echo "   cd litefaas"
+        echo "   go build -o bin/litefaas cmd/litefaas/main.go"
+        exit 1
     fi
 fi
 

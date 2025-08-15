@@ -49,15 +49,18 @@ LiteFaaS/
 git clone https://github.com/your-org/litefaas.git
 cd litefaas
 
-# Installer la dernière version stable
+# Installer (télécharge le binaire depuis GitHub)
 chmod +x install.sh
 ./install.sh
 
-# Ou installer la version de développement
-./install.sh dev
-
 # Démarrer
 ./bin/litefaas
+```
+
+**Note:** Ce script télécharge le binaire depuis GitHub. Pour compiler localement, utilisez :
+
+```bash
+./scripts/build.sh
 ```
 
 #### Option 2: Installation standalone (recommandé pour la production)
