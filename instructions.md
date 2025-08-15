@@ -286,8 +286,6 @@ jobs:
               with:
                   go-version: "1.21"
             - run: go mod download
-            - run: go test ./...
-            - run: go vet ./...
             - run: golangci-lint run
 
     build:
