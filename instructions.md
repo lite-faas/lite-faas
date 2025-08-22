@@ -10,8 +10,9 @@ Use the following instructions to build a lightweight, resource-efficient Functi
 -   **Container Runtime**: containerd
 -   **Database**: SQLite (for minimal resource usage)
 -   **Web Interface**: Embedded HTML/CSS/JavaScript
--   **Container Images**: Alpine Linux (minimal footprint)
+-   **Container Images**: Alpine Linux (minimal footprint) with mirror.gcr.io/ prefix
 -   **Supported Languages**: Python and Node.js
+-   **Application Containerization**: LiteFaaS runs in a container with containerd access
 
 ### 2. Project Architecture
 
@@ -84,23 +85,25 @@ Key Features:
 
 ### 2. Container Manager (internal/container)
 
-Purpose: Manage function containers using containerd.
+Purpose: Manage function containers using containerd from within the application container.
 
 Requirements:
 
--   Create and manage function containers
+-   Create and manage function containers via containerd socket
 -   Handle container lifecycle (start, stop, remove)
 -   Monitor container health
 -   Allocate unique ports for functions
 -   Resource limit enforcement
+-   **Container-to-container communication**: Gestion des communications entre le conteneur principal et les conteneurs de fonctions
 
 Key Features:
 
--   Container template system
+-   Container template system with mirror.gcr.io/ prefix
 -   Port allocation management
 -   Health monitoring
 -   Resource usage tracking
 -   Cleanup on function deletion
+-   **Containerd client integration**: Utilisation directe du client containerd depuis le conteneur
 
 ### 3. Database Layer (internal/database)
 
@@ -185,7 +188,7 @@ Key Features:
 ### 1. Python Function Template
 
 ```dockerfile
-FROM python:3.11-alpine
+FROM mirror.gcr.io/library/python:3.11-alpine
 WORKDIR /app
 COPY function.py .
 COPY requirements.txt .
@@ -197,7 +200,7 @@ CMD ["python", "function.py"]
 ### 2. Node.js Function Template
 
 ```dockerfile
-FROM node:18-alpine
+FROM mirror.gcr.io/library/node:18-alpine
 WORKDIR /app
 COPY function.js .
 COPY package.json .
@@ -215,6 +218,7 @@ CMD ["node", "function.js"]
 -   Automatic updates from GitHub releases
 -   Dependency installation
 -   Service configuration
+-   **Single entry point**: Only `install.sh` script exists, no variations
 
 ### Script Features
 
@@ -225,6 +229,7 @@ CMD ["node", "function.js"]
 -   Configure systemd service (Linux)
 -   Set up auto-update mechanism
 -   Validate installation
+-   **Container deployment**: Deploy LiteFaaS as a container with containerd access
 
 ## Development Workflow
 
@@ -238,14 +243,20 @@ cd litefaas
 # Install dependencies
 go mod download
 
-# Run locally
+# Run locally (with containerd access)
 go run cmd/litefaas/main.go
+
+# Run in container (development)
+docker run --privileged -v /run/containerd/containerd.sock:/run/containerd/containerd.sock -p 8080:8080 litefaas:dev
 
 # Run tests
 go test ./...
 
 # Build binary
 go build -o bin/litefaas cmd/litefaas/main.go
+
+# Build container
+docker build -t litefaas:latest .
 ```
 
 ### 2. Testing Strategy
@@ -312,6 +323,11 @@ LITEFAAS_CONTAINERD_SOCKET=/run/containerd/containerd.sock
 LITEFAAS_FUNCTION_PORT_START=9000
 LITEFAAS_FUNCTION_PORT_END=9999
 
+# Container configuration
+LITEFAAS_CONTAINER_IMAGE_PREFIX=mirror.gcr.io/library/
+LITEFAAS_CONTAINER_PRIVILEGED=true
+LITEFAAS_CONTAINER_NETWORK_MODE=host
+
 # Logging
 LITEFAAS_LOG_LEVEL=info
 LITEFAAS_LOG_FORMAT=json
@@ -336,6 +352,11 @@ database:
 containerd:
     socket: "/run/containerd/containerd.sock"
     namespace: "litefaas"
+
+container:
+    image_prefix: "mirror.gcr.io/library/"
+    privileged: true
+    network_mode: "host"
 
 functions:
     port_range:
@@ -386,19 +407,50 @@ logging:
 
 ## Deployment
 
+### Container Architecture
+
+LiteFaaS est déployé dans un conteneur avec accès à containerd pour gérer les fonctions utilisateur.
+
+#### Container Requirements
+
+-   **Privileged container**: Accès au socket containerd (`/run/containerd/containerd.sock`)
+-   **Volume mounts**: Accès aux volumes nécessaires pour containerd
+-   **Network access**: Accès au réseau pour les communications inter-conteneurs
+-   **Resource limits**: Limitation des ressources du conteneur principal
+
 ### Docker Deployment
 
 ```dockerfile
-FROM golang:1.21-alpine AS builder
+FROM mirror.gcr.io/library/golang:1.21-alpine AS builder
 WORKDIR /app
 COPY . .
 RUN go build -o litefaas cmd/litefaas/main.go
 
-FROM alpine:latest
-RUN apk add --no-cache ca-certificates
+FROM mirror.gcr.io/library/alpine:latest
+RUN apk add --no-cache ca-certificates containerd
 COPY --from=builder /app/litefaas /usr/local/bin/
 EXPOSE 8080
 CMD ["litefaas"]
+```
+
+### Container Runtime Configuration
+
+```yaml
+# docker-compose.yml ou équivalent
+version: "3.8"
+services:
+    litefaas:
+        image: litefaas:latest
+        privileged: true
+        volumes:
+            - /run/containerd/containerd.sock:/run/containerd/containerd.sock
+            - /var/lib/containerd:/var/lib/containerd
+            - /var/lib/litefaas:/var/lib/litefaas
+        ports:
+            - "8080:8080"
+        environment:
+            - LITEFAAS_CONTAINERD_SOCKET=/run/containerd/containerd.sock
+        restart: unless-stopped
 ```
 
 ### Systemd Service

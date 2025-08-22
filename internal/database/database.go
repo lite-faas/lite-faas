@@ -3,27 +3,37 @@ package database
 import (
 	"database/sql"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/mattn/go-sqlite3"
 )
 
 type Function struct {
-	ID          int       `json:"id"`
+	ID          int64     `json:"id"`
 	Name        string    `json:"name"`
 	Language    string    `json:"language"`
 	Code        string    `json:"code"`
-	Port        int       `json:"port"`
+	Port        *int      `json:"port"`
 	Status      string    `json:"status"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`
+	ContainerID *string   `json:"container_id"`
 }
 
-type Database struct {
+type DB struct {
 	db *sql.DB
 }
 
-func New(dbPath string) (*Database, error) {
+func New(dbPath string) (*DB, error) {
+	// Créer le répertoire parent s'il n'existe pas
+	dir := filepath.Dir(dbPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return nil, fmt.Errorf("failed to create database directory: %w", err)
+	}
+
 	db, err := sql.Open("sqlite3", dbPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open database: %w", err)
@@ -37,10 +47,10 @@ func New(dbPath string) (*Database, error) {
 		return nil, fmt.Errorf("failed to create tables: %w", err)
 	}
 
-	return &Database{db: db}, nil
+	return &DB{db: db}, nil
 }
 
-func (d *Database) Close() error {
+func (d *DB) Close() error {
 	return d.db.Close()
 }
 
@@ -51,85 +61,124 @@ func createTables(db *sql.DB) error {
 		name TEXT UNIQUE NOT NULL,
 		language TEXT NOT NULL,
 		code TEXT NOT NULL,
-		port INTEGER UNIQUE NOT NULL,
-		status TEXT NOT NULL DEFAULT 'stopped',
+		port INTEGER UNIQUE,
+		status TEXT DEFAULT 'stopped',
+		container_id TEXT,
 		created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 		updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
+
+	CREATE INDEX IF NOT EXISTS idx_functions_name ON functions(name);
+	CREATE INDEX IF NOT EXISTS idx_functions_port ON functions(port);
+	CREATE INDEX IF NOT EXISTS idx_functions_status ON functions(status);
 	`
 
 	_, err := db.Exec(query)
 	return err
 }
 
-func (d *Database) CreateFunction(fn *Function) error {
+func (d *DB) CreateFunction(name, language, code string) (*Function, error) {
 	query := `
-	INSERT INTO functions (name, language, code, port, status)
-	VALUES (?, ?, ?, ?, ?)
+	INSERT INTO functions (name, language, code, status)
+	VALUES (?, ?, ?, 'stopped')
 	`
 
-	result, err := d.db.Exec(query, fn.Name, fn.Language, fn.Code, fn.Port, fn.Status)
+	result, err := d.db.Exec(query, name, language, code)
 	if err != nil {
-		return fmt.Errorf("failed to create function: %w", err)
+		return nil, fmt.Errorf("failed to create function: %w", err)
 	}
 
 	id, err := result.LastInsertId()
 	if err != nil {
-		return fmt.Errorf("failed to get last insert id: %w", err)
+		return nil, fmt.Errorf("failed to get last insert id: %w", err)
 	}
 
-	fn.ID = int(id)
-	return nil
+	return d.GetFunctionByID(id)
 }
 
-func (d *Database) GetFunction(name string) (*Function, error) {
-	query := `SELECT id, name, language, code, port, status, created_at, updated_at FROM functions WHERE name = ?`
+func (d *DB) GetFunctionByID(id int64) (*Function, error) {
+	query := `
+	SELECT id, name, language, code, port, status, container_id, created_at, updated_at
+	FROM functions WHERE id = ?
+	`
 
-	var fn Function
-	err := d.db.QueryRow(query, name).Scan(
-		&fn.ID, &fn.Name, &fn.Language, &fn.Code, &fn.Port, &fn.Status,
-		&fn.CreatedAt, &fn.UpdatedAt,
+	var f Function
+	err := d.db.QueryRow(query, id).Scan(
+		&f.ID, &f.Name, &f.Language, &f.Code, &f.Port, &f.Status, &f.ContainerID,
+		&f.CreatedAt, &f.UpdatedAt,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get function: %w", err)
 	}
 
-	return &fn, nil
+	return &f, nil
 }
 
-func (d *Database) ListFunctions() ([]*Function, error) {
-	query := `SELECT id, name, language, code, port, status, created_at, updated_at FROM functions ORDER BY name`
+func (d *DB) GetFunctionByName(name string) (*Function, error) {
+	query := `
+	SELECT id, name, language, code, port, status, container_id, created_at, updated_at
+	FROM functions WHERE name = ?
+	`
+
+	var f Function
+	err := d.db.QueryRow(query, name).Scan(
+		&f.ID, &f.Name, &f.Language, &f.Code, &f.Port, &f.Status, &f.ContainerID,
+		&f.CreatedAt, &f.UpdatedAt,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get function: %w", err)
+	}
+
+	return &f, nil
+}
+
+func (d *DB) ListFunctions() ([]*Function, error) {
+	query := `
+	SELECT id, name, language, code, port, status, container_id, created_at, updated_at
+	FROM functions ORDER BY created_at DESC
+	`
 
 	rows, err := d.db.Query(query)
 	if err != nil {
-		return nil, fmt.Errorf("failed to query functions: %w", err)
+		return nil, fmt.Errorf("failed to list functions: %w", err)
 	}
 	defer rows.Close()
 
 	var functions []*Function
 	for rows.Next() {
-		var fn Function
+		var f Function
 		err := rows.Scan(
-			&fn.ID, &fn.Name, &fn.Language, &fn.Code, &fn.Port, &fn.Status,
-			&fn.CreatedAt, &fn.UpdatedAt,
+			&f.ID, &f.Name, &f.Language, &f.Code, &f.Port, &f.Status, &f.ContainerID,
+			&f.CreatedAt, &f.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan function: %w", err)
 		}
-		functions = append(functions, &fn)
+		functions = append(functions, &f)
 	}
 
 	return functions, nil
 }
 
-func (d *Database) UpdateFunction(fn *Function) error {
-	query := `
-	UPDATE functions
-	SET language = ?, code = ?, port = ?, status = ?, updated_at = CURRENT_TIMESTAMP
-	WHERE name = ?
-	`
+func (d *DB) UpdateFunction(id int64, updates map[string]interface{}) error {
+	if len(updates) == 0 {
+		return nil
+	}
 
-	_, err := d.db.Exec(query, fn.Language, fn.Code, fn.Port, fn.Status, fn.Name)
+	query := "UPDATE functions SET "
+	args := []interface{}{}
+	placeholders := []string{}
+
+	for key, value := range updates {
+		placeholders = append(placeholders, key+" = ?")
+		args = append(args, value)
+	}
+	placeholders = append(placeholders, "updated_at = CURRENT_TIMESTAMP")
+	args = append(args, id)
+
+	query += fmt.Sprintf("%s WHERE id = ?", strings.Join(placeholders[:len(placeholders)-1], ", "))
+
+	_, err := d.db.Exec(query, args...)
 	if err != nil {
 		return fmt.Errorf("failed to update function: %w", err)
 	}
@@ -137,39 +186,60 @@ func (d *Database) UpdateFunction(fn *Function) error {
 	return nil
 }
 
-func (d *Database) DeleteFunction(name string) error {
-	query := `DELETE FROM functions WHERE name = ?`
-
-	_, err := d.db.Exec(query, name)
+func (d *DB) DeleteFunction(id int64) error {
+	query := "DELETE FROM functions WHERE id = ?"
+	_, err := d.db.Exec(query, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete function: %w", err)
 	}
-
 	return nil
 }
 
-func (d *Database) UpdateFunctionStatus(name, status string) error {
-	query := `UPDATE functions SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE name = ?`
+func (d *DB) GetAvailablePort() (int, error) {
+	query := `
+	SELECT port FROM functions
+	WHERE port IS NOT NULL
+	ORDER BY port ASC
+	`
 
-	_, err := d.db.Exec(query, status, name)
+	rows, err := d.db.Query(query)
 	if err != nil {
-		return fmt.Errorf("failed to update function status: %w", err)
+		return 0, fmt.Errorf("failed to get used ports: %w", err)
+	}
+	defer rows.Close()
+
+	usedPorts := make(map[int]bool)
+	for rows.Next() {
+		var port int
+		if err := rows.Scan(&port); err != nil {
+			return 0, fmt.Errorf("failed to scan port: %w", err)
+		}
+		usedPorts[port] = true
 	}
 
-	return nil
+	for port := 9000; port <= 9999; port++ {
+		if !usedPorts[port] {
+			return port, nil
+		}
+	}
+
+	return 0, fmt.Errorf("no available ports")
 }
 
-func (d *Database) GetAvailablePort() (int, error) {
-	query := `SELECT port FROM functions ORDER BY port DESC LIMIT 1`
+func (d *DB) GetFunctionByPort(port int) (*Function, error) {
+	query := `
+	SELECT id, name, language, code, port, status, container_id, created_at, updated_at
+	FROM functions WHERE port = ?
+	`
 
-	var port int
-	err := d.db.QueryRow(query).Scan(&port)
-	if err == sql.ErrNoRows {
-		return 9000, nil
-	}
+	var f Function
+	err := d.db.QueryRow(query, port).Scan(
+		&f.ID, &f.Name, &f.Language, &f.Code, &f.Port, &f.Status, &f.ContainerID,
+		&f.CreatedAt, &f.UpdatedAt,
+	)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get last port: %w", err)
+		return nil, fmt.Errorf("failed to get function by port: %w", err)
 	}
 
-	return port + 1, nil
+	return &f, nil
 }

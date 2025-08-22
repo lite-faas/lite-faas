@@ -2,289 +2,305 @@
 
 set -e
 
-echo "Installation de LiteFaaS..."
+# Couleurs pour les messages
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-OS=$(uname -s)
-ARCH=$(uname -m)
+# Configuration
+LITEFAAS_VERSION="latest"
+LITEFAAS_BINARY="litefaas"
+LITEFAAS_SERVICE="litefaas"
+LITEFAAS_USER="litefaas"
+LITEFAAS_GROUP="litefaas"
+LITEFAAS_DIR="/opt/litefaas"
+LITEFAAS_DATA_DIR="/var/lib/litefaas"
+LITEFAAS_CONFIG_DIR="/etc/litefaas"
 
-case $OS in
-    Linux)
-        echo "Détection: Linux"
-        ;;
-    Darwin)
-        echo "Détection: macOS"
-        ;;
-    *)
-        echo "Système d'exploitation non supporté: $OS"
-        exit 1
-        ;;
-esac
+# Fonctions utilitaires
+log_info() {
+    echo -e "${BLUE}[INFO]${NC} $1"
+}
 
-# Installation de containerd
-echo "Installation de containerd..."
+log_success() {
+    echo -e "${GREEN}[SUCCESS]${NC} $1"
+}
 
-case $OS in
-    Linux)
-        if ! command -v containerd &> /dev/null; then
-            echo "Téléchargement et installation de containerd..."
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
 
-            # Détection de la distribution
-            if [ -f /etc/os-release ]; then
-                . /etc/os-release
-                DISTRO=$ID
-                VERSION=$VERSION_ID
-            elif [ -f /etc/debian_version ]; then
-                DISTRO="debian"
-            elif [ -f /etc/redhat-release ]; then
-                DISTRO="rhel"
-            else
-                DISTRO="unknown"
-            fi
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
-            case $DISTRO in
-                ubuntu|debian)
-                    echo "Distribution détectée: $DISTRO"
-                    # Ajouter le repository Docker officiel
-                    sudo apt-get update
-                    sudo apt-get install -y ca-certificates curl gnupg lsb-release
-                    sudo mkdir -p /etc/apt/keyrings
-                    curl -fsSL https://download.docker.com/linux/$DISTRO/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-                    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/$DISTRO $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-                    sudo apt-get update
-                    sudo apt-get install -y containerd.io
-                    ;;
-                alpine)
-                    echo "Distribution détectée: Alpine Linux"
-                    # Alpine utilise apk
-                    sudo apk update
-                    sudo apk add containerd
-                    # Créer le répertoire de configuration
-                    sudo mkdir -p /etc/containerd
-                    ;;
-                rhel|centos|fedora|rocky|almalinux)
-                    echo "Distribution détectée: $DISTRO"
-                    if command -v dnf &> /dev/null; then
-                        sudo dnf install -y containerd
-                    else
-                        sudo yum install -y containerd
-                    fi
-                    ;;
-                *)
-                    echo "Distribution non reconnue: $DISTRO, installation manuelle..."
-                    # Installation manuelle
-                    CONTAINERD_VERSION="1.7.0"
-                    wget https://github.com/containerd/containerd/releases/download/v${CONTAINERD_VERSION}/containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz
-                    sudo tar -C /usr/local -xzf containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz
-                    sudo systemctl enable containerd
-                    sudo systemctl start containerd
-                    rm containerd-${CONTAINERD_VERSION}-linux-amd64.tar.gz
-                    ;;
-            esac
+# Détection du système d'exploitation
+detect_os() {
+    if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+        if [[ -f /etc/os-release ]]; then
+            . /etc/os-release
+            OS=$NAME
+            VER=$VERSION_ID
         else
-            echo "containerd est déjà installé"
-            # Définir DISTRO même si containerd est déjà installé
-            if [ -f /etc/os-release ]; then
-                . /etc/os-release
-                DISTRO=$ID
-            elif [ -f /etc/debian_version ]; then
-                DISTRO="debian"
-            elif [ -f /etc/redhat-release ]; then
-                DISTRO="rhel"
-            else
-                DISTRO="unknown"
-            fi
+            OS=$(uname -s)
+            VER=$(uname -r)
         fi
-        ;;
-    Darwin)
-        if ! command -v containerd &> /dev/null; then
-            echo "Installation de containerd via Homebrew..."
-            brew install containerd
-        else
-            echo "containerd est déjà installé"
-        fi
-        DISTRO="darwin"
-        ;;
-esac
-
-# Vérification de containerd
-if ! command -v containerd &> /dev/null; then
-    echo "Erreur: containerd n'a pas pu être installé"
-    exit 1
-fi
-
-echo "containerd installé avec succès"
-
-# Téléchargement du binaire LiteFaaS
-echo "Téléchargement du binaire LiteFaaS..."
-
-# Déterminer la version à télécharger
-echo "Recherche de la dernière version stable..."
-LATEST_VERSION=$(curl -s https://api.github.com/repos/litefaas/litefaas/releases/latest 2>/dev/null | grep '"tag_name":' | sed -E 's/.*"([^"]+)".*/\1/')
-
-if [ -z "$LATEST_VERSION" ] || [ "$LATEST_VERSION" = "null" ]; then
-    echo "⚠️  Impossible de déterminer la dernière version depuis GitHub."
-    echo "   Cela peut être dû à:"
-    echo "   - Aucune release publiée"
-    echo "   - Problème de connectivité réseau"
-    echo "   - Repository privé ou inexistant"
-    echo ""
-    echo "   Utilisation de la version de développement..."
-    LATEST_VERSION="dev"
-else
-    echo "✅ Version trouvée: $LATEST_VERSION"
-fi
-
-# Déterminer l'architecture
-case $ARCH in
-    x86_64)
-        BINARY_ARCH="amd64"
-        ;;
-    aarch64|arm64)
-        echo "Architecture ARM64 non supportée. Seule l'architecture AMD64 est supportée."
-        exit 1
-        ;;
-    *)
-        echo "Architecture non supportée: $ARCH"
-        exit 1
-        ;;
-esac
-
-# Déterminer le système d'exploitation pour le nom du binaire
-case $OS in
-    Linux)
-        BINARY_OS="linux"
-        ;;
-    Darwin)
-        BINARY_OS="darwin"
-        ;;
-esac
-
-# Créer le répertoire bin
-mkdir -p bin
-
-# Télécharger le binaire
-BINARY_NAME="litefaas-${BINARY_OS}-${BINARY_ARCH}"
-
-if [ "$LATEST_VERSION" = "dev" ]; then
-    echo "❌ Aucune release stable disponible."
-    echo "   Pour utiliser la version de développement, clonez le repository et compilez localement:"
-    echo "   git clone https://github.com/litefaas/litefaas.git"
-    echo "   cd litefaas"
-    echo "   go build -o bin/litefaas cmd/litefaas/main.go"
-    echo ""
-    echo "   Ou attendez qu'une release soit publiée sur GitHub."
-    exit 1
-else
-    echo "Téléchargement de la version $LATEST_VERSION..."
-    DOWNLOAD_URL="https://github.com/litefaas/litefaas/releases/download/${LATEST_VERSION}/${BINARY_NAME}"
-
-    if curl -L -o bin/litefaas "$DOWNLOAD_URL"; then
-        chmod +x bin/litefaas
-        echo "✅ Binaire téléchargé avec succès"
+    elif [[ "$OSTYPE" == "darwin"* ]]; then
+        OS="macOS"
+        VER=$(sw_vers -productVersion)
     else
-        echo "❌ Échec du téléchargement du binaire"
-        echo "   URL: $DOWNLOAD_URL"
-        echo "   Vérifiez que la release existe et que vous avez accès à Internet."
-        echo ""
-        echo "   Pour compiler localement:"
-        echo "   git clone https://github.com/litefaas/litefaas.git"
-        echo "   cd litefaas"
-        echo "   go build -o bin/litefaas cmd/litefaas/main.go"
+        OS="Unknown"
+        VER="Unknown"
+    fi
+}
+
+# Vérification des prérequis
+check_prerequisites() {
+    log_info "Vérification des prérequis..."
+
+    # Vérifier si Go est installé
+    if ! command -v go &> /dev/null; then
+        log_warning "Go n'est pas installé. Installation..."
+        install_go
+    else
+        log_success "Go est déjà installé"
+    fi
+
+    # Vérifier si containerd est installé
+    if ! command -v containerd &> /dev/null; then
+        log_warning "Containerd n'est pas installé. Installation..."
+        install_containerd
+    else
+        log_success "Containerd est déjà installé"
+    fi
+}
+
+# Installation de Go
+install_go() {
+    log_info "Installation de Go..."
+
+    if [[ "$OS" == "Ubuntu" ]] || [[ "$OS" == "Debian GNU/Linux" ]]; then
+        sudo apt-get update
+        sudo apt-get install -y golang-go
+    elif [[ "$OS" == "CentOS Linux" ]] || [[ "$OS" == "Red Hat Enterprise Linux" ]]; then
+        sudo yum install -y golang
+    elif [[ "$OS" == "macOS" ]]; then
+        if command -v brew &> /dev/null; then
+            brew install go
+        else
+            log_error "Homebrew n'est pas installé. Veuillez installer Homebrew ou Go manuellement."
+            exit 1
+        fi
+    else
+        log_error "Système d'exploitation non supporté: $OS"
         exit 1
     fi
-fi
+}
 
-# Création des répertoires nécessaires
-echo "Création des répertoires nécessaires..."
+# Installation de containerd
+install_containerd() {
+    log_info "Installation de containerd..."
 
-case $DISTRO in
-    alpine)
-        # Alpine peut avoir des contraintes sur /var/lib
-        sudo mkdir -p /var/lib/litefaas
-        # Vérifier si l'utilisateur existe
-        if id "$USER" >/dev/null 2>&1; then
-            sudo chown $USER:$USER /var/lib/litefaas
+    if [[ "$OS" == "Ubuntu" ]] || [[ "$OS" == "Debian GNU/Linux" ]]; then
+        sudo apt-get update
+        sudo apt-get install -y containerd
+    elif [[ "$OS" == "CentOS Linux" ]] || [[ "$OS" == "Red Hat Enterprise Linux" ]]; then
+        sudo yum install -y containerd
+    elif [[ "$OS" == "macOS" ]]; then
+        if command -v brew &> /dev/null; then
+            brew install containerd
         else
-            # Sur Alpine, l'utilisateur peut être différent
-            sudo chown root:root /var/lib/litefaas
-            sudo chmod 755 /var/lib/litefaas
+            log_error "Homebrew n'est pas installé. Veuillez installer Homebrew ou containerd manuellement."
+            exit 1
         fi
-        ;;
-    *)
-        # Ubuntu et autres distributions
-        sudo mkdir -p /var/lib/litefaas
-        sudo chown $USER:$USER /var/lib/litefaas
-        ;;
-esac
+    else
+        log_error "Système d'exploitation non supporté: $OS"
+        exit 1
+    fi
 
-# Configuration de containerd
-echo "Configuration de containerd..."
-sudo mkdir -p /etc/containerd
-if [ ! -f /etc/containerd/config.toml ]; then
-    containerd config default | sudo tee /etc/containerd/config.toml > /dev/null
-fi
+    # Démarrer containerd
+    sudo systemctl enable containerd
+    sudo systemctl start containerd
+}
 
-# Démarrer/redémarrer containerd selon la distribution
-case $DISTRO in
-    alpine)
-        echo "Configuration pour Alpine Linux..."
-        # Alpine utilise openrc ou systemd selon la version
-        if command -v systemctl &> /dev/null; then
-            sudo systemctl enable containerd
-            sudo systemctl restart containerd
-        elif command -v rc-update &> /dev/null; then
-            sudo rc-update add containerd default
-            sudo rc-service containerd start
-        else
-            echo "Démarrage manuel de containerd..."
-            sudo containerd &
-        fi
-        ;;
-    *)
-        # Ubuntu et autres distributions avec systemd
-        if command -v systemctl &> /dev/null; then
-            sudo systemctl enable containerd
-            sudo systemctl restart containerd
-        else
-            echo "Démarrage manuel de containerd..."
-            sudo containerd &
-        fi
-        ;;
-esac
+# Création de l'utilisateur et des répertoires
+setup_directories() {
+    log_info "Configuration des répertoires et utilisateur..."
 
-# Vérification finale
-echo "Vérification de l'installation..."
+    # Créer l'utilisateur si il n'existe pas
+    if ! id "$LITEFAAS_USER" &>/dev/null; then
+        sudo useradd -r -s /bin/false -d "$LITEFAAS_DIR" "$LITEFAAS_USER"
+        log_success "Utilisateur $LITEFAAS_USER créé"
+    fi
 
-# Vérifier que containerd fonctionne
-if command -v containerd &> /dev/null; then
-    echo "✅ containerd installé"
-else
-    echo "❌ containerd non trouvé"
-    exit 1
-fi
+    # Créer les répertoires
+    sudo mkdir -p "$LITEFAAS_DIR"
+    sudo mkdir -p "$LITEFAAS_DATA_DIR"
+    sudo mkdir -p "$LITEFAAS_CONFIG_DIR"
 
-# Vérifier que le binaire existe
-if [ -f "bin/litefaas" ]; then
-    echo "✅ Binaire LiteFaaS trouvé"
-else
-    echo "❌ Binaire LiteFaaS non trouvé"
-    exit 1
-fi
+    # Définir les permissions
+    sudo chown -R "$LITEFAAS_USER:$LITEFAAS_GROUP" "$LITEFAAS_DIR"
+    sudo chown -R "$LITEFAAS_USER:$LITEFAAS_GROUP" "$LITEFAAS_DATA_DIR"
+    sudo chown -R "$LITEFAAS_USER:$LITEFAAS_GROUP" "$LITEFAAS_CONFIG_DIR"
 
-# Vérifier les permissions
-if [ -d "/var/lib/litefaas" ]; then
-    echo "✅ Répertoire de données créé"
-else
-    echo "❌ Répertoire de données non créé"
-    exit 1
-fi
+    log_success "Répertoires configurés"
+}
 
-echo ""
-echo "🎉 Installation terminée avec succès!"
-echo "Distribution détectée: $DISTRO"
-echo "Pour démarrer LiteFaaS: ./bin/litefaas"
-echo ""
-echo "Note: Si vous utilisez Alpine Linux, assurez-vous que containerd est démarré:"
-echo "  - Avec systemd: sudo systemctl start containerd"
-echo "  - Avec openrc: sudo rc-service containerd start"
-echo "  - Manuellement: sudo containerd &"
+# Téléchargement et installation du binaire
+install_binary() {
+    log_info "Téléchargement de LiteFaaS..."
+
+    # Pour l'instant, on compile depuis les sources
+    # TODO: Implémenter le téléchargement depuis GitHub releases
+
+    if [[ -f "go.mod" ]]; then
+        log_info "Compilation depuis les sources..."
+        go build -o "$LITEFAAS_BINARY" cmd/litefaas/main.go
+        sudo cp "$LITEFAAS_BINARY" "$LITEFAAS_DIR/"
+        sudo chown "$LITEFAAS_USER:$LITEFAAS_GROUP" "$LITEFAAS_DIR/$LITEFAAS_BINARY"
+        sudo chmod +x "$LITEFAAS_DIR/$LITEFAAS_BINARY"
+    else
+        log_error "Sources non trouvées. Veuillez exécuter ce script depuis le répertoire du projet."
+        exit 1
+    fi
+
+    log_success "Binaire installé dans $LITEFAAS_DIR/$LITEFAAS_BINARY"
+}
+
+# Configuration du service systemd
+setup_systemd_service() {
+    if [[ "$OS" == "macOS" ]]; then
+        log_warning "Systemd non disponible sur macOS. Service non configuré."
+        return
+    fi
+
+    log_info "Configuration du service systemd..."
+
+    cat << EOF | sudo tee /etc/systemd/system/$LITEFAAS_SERVICE.service
+[Unit]
+Description=LiteFaaS Function Server
+After=network.target containerd.service
+Requires=containerd.service
+
+[Service]
+Type=simple
+User=$LITEFAAS_USER
+Group=$LITEFAAS_GROUP
+ExecStart=$LITEFAAS_DIR/$LITEFAAS_BINARY
+Restart=always
+RestartSec=5
+Environment=LITEFAAS_DB_PATH=$LITEFAAS_DATA_DIR/functions.db
+Environment=LITEFAAS_CONTAINERD_SOCKET=/run/containerd/containerd.sock
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    sudo systemctl daemon-reload
+    sudo systemctl enable $LITEFAAS_SERVICE
+
+    log_success "Service systemd configuré"
+}
+
+# Configuration du firewall
+setup_firewall() {
+    if [[ "$OS" == "macOS" ]]; then
+        log_warning "Configuration du firewall macOS non implémentée"
+        return
+    fi
+
+    log_info "Configuration du firewall..."
+
+    if command -v ufw &> /dev/null; then
+        sudo ufw allow 8080/tcp
+        log_success "Port 8080 ouvert avec ufw"
+    elif command -v firewall-cmd &> /dev/null; then
+        sudo firewall-cmd --permanent --add-port=8080/tcp
+        sudo firewall-cmd --reload
+        log_success "Port 8080 ouvert avec firewalld"
+    else
+        log_warning "Aucun gestionnaire de firewall détecté"
+    fi
+}
+
+# Démarrage du service
+start_service() {
+    if [[ "$OS" == "macOS" ]]; then
+        log_info "Démarrage manuel de LiteFaaS..."
+        log_info "Pour démarrer LiteFaaS, exécutez: $LITEFAAS_DIR/$LITEFAAS_BINARY"
+        return
+    fi
+
+    log_info "Démarrage du service..."
+    sudo systemctl start $LITEFAAS_SERVICE
+
+    if sudo systemctl is-active --quiet $LITEFAAS_SERVICE; then
+        log_success "Service démarré avec succès"
+    else
+        log_error "Échec du démarrage du service"
+        sudo systemctl status $LITEFAAS_SERVICE
+        exit 1
+    fi
+}
+
+# Vérification de l'installation
+verify_installation() {
+    log_info "Vérification de l'installation..."
+
+    # Vérifier que le binaire existe
+    if [[ ! -f "$LITEFAAS_DIR/$LITEFAAS_BINARY" ]]; then
+        log_error "Binaire non trouvé"
+        exit 1
+    fi
+
+    # Vérifier que le service répond
+    sleep 3
+    if curl -s http://localhost:8080/api/health > /dev/null; then
+        log_success "LiteFaaS répond correctement sur http://localhost:8080"
+    else
+        log_warning "LiteFaaS ne répond pas encore. Vérifiez les logs avec: sudo journalctl -u $LITEFAAS_SERVICE"
+    fi
+}
+
+# Affichage des informations finales
+show_final_info() {
+    log_success "Installation de LiteFaaS terminée !"
+    echo
+    echo "Informations importantes:"
+    echo "- Interface web: http://localhost:8080"
+    echo "- API: http://localhost:8080/api"
+    echo "- Base de données: $LITEFAAS_DATA_DIR/functions.db"
+    echo "- Configuration: $LITEFAAS_CONFIG_DIR"
+    echo
+    if [[ "$OS" != "macOS" ]]; then
+        echo "Commandes utiles:"
+        echo "- Démarrer: sudo systemctl start $LITEFAAS_SERVICE"
+        echo "- Arrêter: sudo systemctl stop $LITEFAAS_SERVICE"
+        echo "- Status: sudo systemctl status $LITEFAAS_SERVICE"
+        echo "- Logs: sudo journalctl -u $LITEFAAS_SERVICE -f"
+    fi
+    echo
+    echo "Documentation: https://github.com/litefaas/litefaas"
+}
+
+# Fonction principale
+main() {
+    log_info "Début de l'installation de LiteFaaS..."
+
+    detect_os
+    log_info "Système détecté: $OS $VER"
+
+    check_prerequisites
+    setup_directories
+    install_binary
+    setup_systemd_service
+    setup_firewall
+    start_service
+    verify_installation
+    show_final_info
+}
+
+# Exécution du script
+main "$@"

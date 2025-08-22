@@ -1,0 +1,31 @@
+version: "3.8"
+
+services:
+  litefaas:
+    build: .
+    image: litefaas:latest
+    container_name: litefaas
+    privileged: true
+    ports:
+      - "8080:8080"
+    volumes:
+      - /run/containerd/containerd.sock:/run/containerd/containerd.sock
+      - /var/lib/containerd:/var/lib/containerd
+      - litefaas-data:/var/lib/litefaas
+    environment:
+      - LITEFAAS_CONTAINERD_SOCKET=/run/containerd/containerd.sock
+      - LITEFAAS_DB_PATH=/var/lib/litefaas/functions.db
+      - LITEFAAS_PORT=8080
+      - LITEFAAS_LOG_LEVEL=info
+      - LITEFAAS_LOG_FORMAT=json
+    restart: unless-stopped
+    networks:
+      - litefaas-network
+
+volumes:
+  litefaas-data:
+    driver: local
+
+networks:
+  litefaas-network:
+    driver: bridge

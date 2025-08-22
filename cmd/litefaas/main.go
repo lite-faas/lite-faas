@@ -24,32 +24,95 @@ type Config struct {
 	ContainerdSocket        string
 	FunctionPortStart       int
 	FunctionPortEnd         int
+	ContainerImagePrefix    string
+	ContainerPrivileged     bool
+	ContainerNetworkMode    string
 	LogLevel                string
+	LogFormat               string
 	MaxMemoryPerFunction    string
 	MaxCPUPerFunction       string
+	DevMode                 bool
+}
+
+func loadConfig() *Config {
+	config := &Config{}
+
+	flag.IntVar(&config.Port, "port", 8080, "Port to listen on")
+	flag.StringVar(&config.DBPath, "db-path", "/var/lib/litefaas/functions.db", "Database path")
+	flag.StringVar(&config.ContainerdSocket, "containerd-socket", "/run/containerd/containerd.sock", "Containerd socket path")
+	flag.IntVar(&config.FunctionPortStart, "function-port-start", 9000, "Start of function port range")
+	flag.IntVar(&config.FunctionPortEnd, "function-port-end", 9999, "End of function port range")
+	flag.StringVar(&config.ContainerImagePrefix, "container-image-prefix", "mirror.gcr.io/library/", "Container image prefix")
+	flag.BoolVar(&config.ContainerPrivileged, "container-privileged", true, "Run containers in privileged mode")
+	flag.StringVar(&config.ContainerNetworkMode, "container-network-mode", "host", "Container network mode")
+	flag.StringVar(&config.LogLevel, "log-level", "info", "Log level")
+	flag.StringVar(&config.LogFormat, "log-format", "json", "Log format")
+	flag.StringVar(&config.MaxMemoryPerFunction, "max-memory-per-function", "512MB", "Max memory per function")
+	flag.StringVar(&config.MaxCPUPerFunction, "max-cpu-per-function", "0.5", "Max CPU per function")
+	flag.BoolVar(&config.DevMode, "dev", false, "Development mode (disables containerd)")
+
+	flag.Parse()
+
+	if port := os.Getenv("LITEFAAS_PORT"); port != "" {
+		if p, err := fmt.Sscanf(port, "%d", &config.Port); err == nil && p == 1 {
+			// Port updated from environment
+		}
+	}
+	if dbPath := os.Getenv("LITEFAAS_DB_PATH"); dbPath != "" {
+		config.DBPath = dbPath
+	}
+	if socket := os.Getenv("LITEFAAS_CONTAINERD_SOCKET"); socket != "" {
+		config.ContainerdSocket = socket
+	}
+
+	return config
+}
+
+func setupLogging(config *Config) {
+	level, err := logrus.ParseLevel(config.LogLevel)
+	if err != nil {
+		level = logrus.InfoLevel
+	}
+	logrus.SetLevel(level)
+
+	if config.LogFormat == "json" {
+		logrus.SetFormatter(&logrus.JSONFormatter{})
+	} else {
+		logrus.SetFormatter(&logrus.TextFormatter{})
+	}
 }
 
 func main() {
-	config := parseFlags()
+	config := loadConfig()
+	setupLogging(config)
 
-	logger := setupLogger(config.LogLevel)
+	logrus.Info("Starting LiteFaaS...")
 
 	db, err := database.New(config.DBPath)
 	if err != nil {
-		logger.Fatalf("Failed to initialize database: %v", err)
+		logrus.Fatalf("Failed to initialize database: %v", err)
 	}
 	defer db.Close()
 
-	containerMgr, err := container.NewManager(config.ContainerdSocket, logger)
-	if err != nil {
-		logger.Fatalf("Failed to initialize container manager: %v", err)
+	var containerManager *container.Manager
+	if !config.DevMode {
+		containerManager, err = container.NewManager(config.ContainerdSocket, config.ContainerImagePrefix, config.ContainerPrivileged, config.ContainerNetworkMode)
+		if err != nil {
+			logrus.Fatalf("Failed to initialize container manager: %v", err)
+		}
+	} else {
+		logrus.Warn("Running in development mode - container management disabled")
 	}
 
-	proxyHandler := proxy.NewHandler(containerMgr, db, logger)
-	apiHandler := api.NewHandler(db, containerMgr, logger)
-	webHandler := web.NewHandler(logger)
+	proxy := proxy.New(db, containerManager, config.FunctionPortStart, config.FunctionPortEnd)
 
-	router := setupRouter(proxyHandler, apiHandler, webHandler)
+	apiHandler := api.NewHandler(db, containerManager, proxy)
+	webHandler := web.NewHandler()
+
+	router := http.NewServeMux()
+
+	router.Handle("/api/", http.StripPrefix("/api", apiHandler))
+	router.Handle("/", webHandler)
 
 	server := &http.Server{
 		Addr:    fmt.Sprintf(":%d", config.Port),
@@ -57,68 +120,24 @@ func main() {
 	}
 
 	go func() {
-		logger.Infof("Starting LiteFaaS server on port %d", config.Port)
+		logrus.Infof("Server starting on port %d", config.Port)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			logger.Fatalf("Server error: %v", err)
+			logrus.Fatalf("Server failed: %v", err)
 		}
 	}()
 
-	waitForShutdown(server, logger)
-}
+	sigChan := make(chan os.Signal, 1)
+	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
 
-func parseFlags() *Config {
-	config := &Config{}
+	<-sigChan
+	logrus.Info("Shutting down...")
 
-	flag.IntVar(&config.Port, "port", 8080, "Server port")
-	flag.StringVar(&config.DBPath, "db-path", "/var/lib/litefaas/functions.db", "Database path")
-	flag.StringVar(&config.ContainerdSocket, "containerd-socket", "/run/containerd/containerd.sock", "Containerd socket path")
-	flag.IntVar(&config.FunctionPortStart, "function-port-start", 9000, "Start of function port range")
-	flag.IntVar(&config.FunctionPortEnd, "function-port-end", 9999, "End of function port range")
-	flag.StringVar(&config.LogLevel, "log-level", "info", "Log level")
-	flag.StringVar(&config.MaxMemoryPerFunction, "max-memory", "512MB", "Max memory per function")
-	flag.StringVar(&config.MaxCPUPerFunction, "max-cpu", "0.5", "Max CPU per function")
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
 
-	flag.Parse()
-
-	return config
-}
-
-func setupLogger(level string) *logrus.Logger {
-	logger := logrus.New()
-	logger.SetFormatter(&logrus.JSONFormatter{})
-
-	lvl, err := logrus.ParseLevel(level)
-	if err != nil {
-		lvl = logrus.InfoLevel
-	}
-	logger.SetLevel(lvl)
-
-	return logger
-}
-
-func setupRouter(proxyHandler *proxy.Handler, apiHandler *api.Handler, webHandler *web.Handler) http.Handler {
-	mux := http.NewServeMux()
-
-	mux.HandleFunc("/", proxyHandler.HandleRequest)
-	mux.HandleFunc("/api/", apiHandler.HandleRequest)
-	mux.HandleFunc("/web/", webHandler.HandleRequest)
-
-	return mux
-}
-
-func waitForShutdown(server *http.Server, logger *logrus.Logger) {
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	<-quit
-
-	logger.Info("Shutting down server...")
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	if err := server.Shutdown(ctx); err != nil {
-		logger.Errorf("Server forced to shutdown: %v", err)
+	if err := server.Shutdown(shutdownCtx); err != nil {
+		logrus.Errorf("Server shutdown error: %v", err)
 	}
 
-	logger.Info("Server exited")
+	logrus.Info("LiteFaaS stopped")
 }
