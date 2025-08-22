@@ -2,9 +2,23 @@
 
 echo "=== Démarrage LiteFaaS en mode production ==="
 
-# Vérifier que Docker est installé
-if ! command -v docker &> /dev/null; then
-    echo "Erreur: Docker n'est pas installé"
+# Vérifier que Buildah est installé
+if ! command -v buildah &> /dev/null; then
+    echo "Erreur: Buildah n'est pas installé"
+    echo "Installez Buildah:"
+    echo "  - macOS: brew install buildah"
+    echo "  - Ubuntu/Debian: sudo apt-get install buildah"
+    echo "  - CentOS/RHEL: sudo yum install buildah"
+    exit 1
+fi
+
+# Vérifier que Podman est installé
+if ! command -v podman &> /dev/null; then
+    echo "Erreur: Podman n'est pas installé"
+    echo "Installez Podman:"
+    echo "  - macOS: brew install podman"
+    echo "  - Ubuntu/Debian: sudo apt-get install podman"
+    echo "  - CentOS/RHEL: sudo yum install podman"
     exit 1
 fi
 

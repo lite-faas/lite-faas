@@ -42,7 +42,7 @@ fi
 
 # Test 3: Vérifier que le conteneur est en cours d'exécution
 echo -e "\n${YELLOW}3. Vérification du conteneur LiteFaaS${NC}"
-if docker ps --format "table {{.Names}}" | grep -q "litefaas-prod"; then
+if podman ps --format "table {{.Names}}" | grep -q "litefaas-prod"; then
     print_result "Conteneur LiteFaaS" "PASS" "Conteneur en cours d'exécution"
 else
     print_result "Conteneur LiteFaaS" "FAIL" "Conteneur non trouvé"
@@ -98,7 +98,7 @@ fi
 
 # Test 8: Vérifier que le conteneur de fonction a été créé
 echo -e "\n${YELLOW}8. Vérification du conteneur de fonction${NC}"
-if docker ps --format "table {{.Names}}" | grep -q "litefaas-test-prod"; then
+if podman ps --format "table {{.Names}}" | grep -q "litefaas-test-prod"; then
     print_result "Conteneur de fonction" "PASS" "Conteneur de fonction créé"
 else
     print_result "Conteneur de fonction" "FAIL" "Conteneur de fonction non trouvé"
