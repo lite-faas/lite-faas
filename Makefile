@@ -32,7 +32,19 @@ run: build
 # Run in development mode
 dev: build
 	@echo "Starting LiteFaaS in development mode..."
-	./$(BINARY_NAME) --dev --db-path ./dev.db --port 8080 --log-format text --log-level info
+	./$(BINARY_NAME) --dev --db-path ./dev.db --port 8080 --log-format text --log-level debug
+
+# Test API endpoints
+test-api:
+	@echo "Testing API endpoints..."
+	@chmod +x test_diagnostic.sh
+	./test_diagnostic.sh
+
+# Test complet de l'API
+test-complete:
+	@echo "Running complete API tests..."
+	@chmod +x test_complete.sh
+	./test_complete.sh
 
 # Build Docker image
 docker-build:
@@ -81,19 +93,21 @@ install:
 # Show help
 help:
 	@echo "LiteFaaS Makefile Commands:"
-	@echo "  build        - Build the application"
-	@echo "  clean        - Clean build artifacts"
-	@echo "  test         - Run tests"
-	@echo "  run          - Build and run locally"
-	@echo "  dev          - Build and run in development mode"
-	@echo "  docker-build - Build Docker image"
-	@echo "  docker-run   - Run with Docker Compose"
-	@echo "  docker-stop  - Stop Docker Compose"
-	@echo "  deps         - Install dependencies"
-	@echo "  fmt          - Format code"
-	@echo "  lint         - Lint code"
-	@echo "  install      - Install the application"
-	@echo "  help         - Show this help"
+	@echo "  build         - Build the application"
+	@echo "  clean         - Clean build artifacts"
+	@echo "  test          - Run tests"
+	@echo "  run           - Build and run locally"
+	@echo "  dev           - Build and run in development mode"
+	@echo "  test-api      - Test API endpoints (basic)"
+	@echo "  test-complete - Test API endpoints (complete)"
+	@echo "  docker-build  - Build Docker image"
+	@echo "  docker-run    - Run with Docker Compose"
+	@echo "  docker-stop   - Stop Docker Compose"
+	@echo "  deps          - Install dependencies"
+	@echo "  fmt           - Format code"
+	@echo "  lint          - Lint code"
+	@echo "  install       - Install the application"
+	@echo "  help          - Show this help"
 
 # Default target
 .DEFAULT_GOAL := help

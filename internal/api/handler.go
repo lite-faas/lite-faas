@@ -256,7 +256,17 @@ func (h *Handler) deleteFunction(w http.ResponseWriter, r *http.Request, name st
 
 func (h *Handler) startFunction(w http.ResponseWriter, r *http.Request, name string) {
 	if err := h.proxy.StartFunction(r.Context(), name); err != nil {
-		http.Error(w, fmt.Sprintf("Failed to start function: %v", err), http.StatusInternalServerError)
+		// Log l'erreur pour le débogage
+		fmt.Printf("Error starting function %s: %v\n", name, err)
+
+		// Retourner une réponse JSON avec plus de détails
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"error":   "Failed to start function",
+			"message": err.Error(),
+			"function": name,
+		})
 		return
 	}
 

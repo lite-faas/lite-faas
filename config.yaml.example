@@ -1,6 +1,4 @@
-# Configuration d'exemple pour LiteFaaS
-# Copiez ce fichier vers config.yaml et modifiez selon vos besoins
-
+# Configuration LiteFaaS
 server:
   port: 8080
   host: "0.0.0.0"
@@ -29,3 +27,9 @@ functions:
 logging:
   level: "info"
   format: "json"
+
+# Mode développement
+development:
+  enabled: false
+  db_path: "./dev.db"
+  log_format: "text"

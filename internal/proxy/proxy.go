@@ -92,10 +92,6 @@ func (p *Proxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (p *Proxy) StartFunction(ctx context.Context, functionName string) error {
-	if p.containerManager == nil {
-		return fmt.Errorf("container management is disabled in development mode")
-	}
-
 	function, err := p.db.GetFunctionByName(functionName)
 	if err != nil {
 		return fmt.Errorf("function not found: %w", err)
@@ -110,6 +106,23 @@ func (p *Proxy) StartFunction(ctx context.Context, functionName string) error {
 		return fmt.Errorf("no available ports: %w", err)
 	}
 
+	// En mode développement (containerManager nil), on simule le démarrage
+	if p.containerManager == nil {
+		updates := map[string]interface{}{
+			"port":         port,
+			"status":       "running",
+			"container_id": "dev-mode-simulation",
+		}
+
+		if err := p.db.UpdateFunction(function.ID, updates); err != nil {
+			return fmt.Errorf("failed to update function status: %w", err)
+		}
+
+		fmt.Printf("Started function %s on port %d (development mode simulation)\n", functionName, port)
+		return nil
+	}
+
+	// Mode production avec containerd
 	containerID, err := p.containerManager.CreateFunctionContainer(ctx, function.Name, function.Language, function.Code, port)
 	if err != nil {
 		return fmt.Errorf("failed to create container: %w", err)
@@ -140,6 +153,7 @@ func (p *Proxy) StopFunction(ctx context.Context, functionName string) error {
 		return fmt.Errorf("function is not running")
 	}
 
+	// En mode développement, on ignore l'arrêt du conteneur
 	if function.ContainerID != nil && *function.ContainerID != "" && p.containerManager != nil {
 		if err := p.containerManager.StopContainer(ctx, *function.ContainerID); err != nil {
 			fmt.Printf("Failed to stop container %s: %v\n", *function.ContainerID, err)
@@ -165,7 +179,12 @@ func (p *Proxy) GetFunctionStatus(functionName string) (string, error) {
 		return "", fmt.Errorf("function not found: %w", err)
 	}
 
-	if function.Status == "running" && function.ContainerID != nil && *function.ContainerID != "" && p.containerManager != nil {
+	// En mode développement, on retourne directement le statut de la DB
+	if p.containerManager == nil {
+		return function.Status, nil
+	}
+
+	if function.Status == "running" && function.ContainerID != nil && *function.ContainerID != "" {
 		ctx := context.Background()
 		containerStatus, err := p.containerManager.GetContainerStatus(ctx, *function.ContainerID)
 		if err != nil {
