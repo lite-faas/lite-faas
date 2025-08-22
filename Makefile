@@ -28,7 +28,7 @@ test:
 run: docker-build
 	@echo "Starting LiteFaaS in production container..."
 	@echo "Building and running LiteFaaS with containerd access..."
-	docker run --rm -d \
+	podman run --rm -d \
 		--name litefaas-prod \
 		--privileged \
 		-p 8080:8080 \
@@ -74,11 +74,17 @@ test-all:
 	@chmod +x test_all.sh
 	./test_all.sh
 
-# Build Docker image
+# Test de production
+test-production:
+	@echo "Testing production mode..."
+	@chmod +x test_production.sh
+	./test_production.sh
+
+# Build container image with Buildah
 docker-build:
-	@echo "Building Docker image..."
-	docker build -t $(DOCKER_IMAGE) .
-	@echo "Docker build complete"
+	@echo "Building container image with Buildah..."
+	buildah bud -t $(DOCKER_IMAGE) .
+	@echo "Buildah build complete"
 
 # Run with Docker Compose
 docker-run:
@@ -89,14 +95,14 @@ docker-run:
 # Stop production container
 stop:
 	@echo "Stopping LiteFaaS production container..."
-	docker stop litefaas-prod 2>/dev/null || echo "Container not running"
-	docker rm litefaas-prod 2>/dev/null || echo "Container not found"
+	podman stop litefaas-prod 2>/dev/null || echo "Container not running"
+	podman rm litefaas-prod 2>/dev/null || echo "Container not found"
 	@echo "LiteFaaS production container stopped"
 
 # Show production container logs
 logs:
 	@echo "Showing LiteFaaS production container logs..."
-	docker logs -f litefaas-prod
+	podman logs -f litefaas-prod
 
 # Stop Docker Compose
 docker-stop:
@@ -144,6 +150,7 @@ help:
 	@echo "  test-complete - Test API endpoints (complete)"
 	@echo "  test-web      - Test web interface"
 	@echo "  test-all      - Test complet (API + Web)"
+	@echo "  test-production - Test mode production"
 	@echo "  docker-build  - Build Docker image"
 	@echo "  docker-run    - Run with Docker Compose"
 	@echo "  docker-stop   - Stop Docker Compose"
