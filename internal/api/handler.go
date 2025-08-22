@@ -258,13 +258,13 @@ func (h *Handler) startFunction(w http.ResponseWriter, r *http.Request, name str
 	if err := h.proxy.StartFunction(r.Context(), name); err != nil {
 		// Log l'erreur pour le débogage
 		fmt.Printf("Error starting function %s: %v\n", name, err)
-		
+
 		// Détecter si c'est le mode développement
 		statusCode := http.StatusInternalServerError
 		if err.Error() == "container management is disabled in development mode" {
 			statusCode = http.StatusServiceUnavailable
 		}
-		
+
 		// Retourner une réponse JSON avec plus de détails
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(statusCode)

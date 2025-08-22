@@ -46,6 +46,18 @@ test-complete:
 	@chmod +x test_complete.sh
 	./test_complete.sh
 
+# Test de l'interface web
+test-web:
+	@echo "Testing web interface..."
+	@chmod +x test_web.sh
+	./test_web.sh
+
+# Test complet (API + Web)
+test-all:
+	@echo "Running all tests..."
+	@chmod +x test_all.sh
+	./test_all.sh
+
 # Build Docker image
 docker-build:
 	@echo "Building Docker image..."
@@ -100,6 +112,8 @@ help:
 	@echo "  dev           - Build and run in development mode"
 	@echo "  test-api      - Test API endpoints (basic)"
 	@echo "  test-complete - Test API endpoints (complete)"
+	@echo "  test-web      - Test web interface"
+	@echo "  test-all      - Test complet (API + Web)"
 	@echo "  docker-build  - Build Docker image"
 	@echo "  docker-run    - Run with Docker Compose"
 	@echo "  docker-stop   - Stop Docker Compose"
