@@ -32,7 +32,7 @@ fi
 
 # Arrêter le conteneur existant s'il y en a un
 echo "Arrêt du conteneur existant..."
-docker stop litefaas-prod 2>/dev/null || echo "Aucun conteneur à arrêter"
+podman stop litefaas-prod 2>/dev/null || echo "Aucun conteneur à arrêter"
 
 # Construire et démarrer le conteneur
 echo "Construction et démarrage du conteneur..."

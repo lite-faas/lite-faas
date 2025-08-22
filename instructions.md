@@ -421,7 +421,7 @@ LiteFaaS est déployé dans un conteneur avec accès à containerd pour gérer l
 ### Docker Deployment
 
 ```dockerfile
-FROM mirror.gcr.io/library/golang:1.21-alpine AS builder
+FROM mirror.gcr.io/golang:1.21-alpine AS builder
 WORKDIR /app
 COPY . .
 RUN go build -o litefaas cmd/litefaas/main.go
