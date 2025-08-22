@@ -71,6 +71,11 @@ func NewManager(socketPath, imagePrefix string, privileged bool, networkMode str
 func (m *Manager) CreateFunctionContainer(ctx context.Context, functionName, language, code string, port int) (string, error) {
 	ctx = namespaces.WithNamespace(ctx, m.namespace)
 
+	// Vérifier que /tmp est accessible
+	if _, err := os.Stat("/tmp"); os.IsNotExist(err) {
+		return "", fmt.Errorf("directory /tmp does not exist")
+	}
+
 	var imageName string
 
 	switch language {
@@ -90,7 +95,7 @@ func (m *Manager) CreateFunctionContainer(ctx context.Context, functionName, lan
 	containerID := fmt.Sprintf("litefaas-%s-%d", functionName, time.Now().Unix())
 	containerName := fmt.Sprintf("%s-%s", m.namespace, containerID)
 
-	tempDir, err := os.MkdirTemp("", "litefaas-*")
+	tempDir, err := os.MkdirTemp("/tmp", "litefaas-*")
 	if err != nil {
 		return "", fmt.Errorf("failed to create temp directory: %w", err)
 	}
@@ -133,7 +138,7 @@ func (m *Manager) CreateFunctionContainer(ctx context.Context, functionName, lan
 		}),
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to create container: %w", err)
+		return "", fmt.Errorf("failed to create container (tempDir: %s): %w", tempDir, err)
 	}
 
 	task, err := container.NewTask(ctx, cio.NewCreator(cio.WithStdio))
