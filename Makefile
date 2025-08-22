@@ -24,10 +24,26 @@ test:
 	go test ./...
 	@echo "Tests complete"
 
-# Run the application locally
-run: build
-	@echo "Starting LiteFaaS..."
-	./$(BINARY_NAME)
+# Run the application in container (production mode)
+run: docker-build
+	@echo "Starting LiteFaaS in production container..."
+	@echo "Building and running LiteFaaS with containerd access..."
+	docker run --rm -d \
+		--name litefaas-prod \
+		--privileged \
+		-p 8080:8080 \
+		-v /run/containerd/containerd.sock:/run/containerd/containerd.sock \
+		-v /var/lib/containerd:/var/lib/containerd \
+		-v litefaas-data:/var/lib/litefaas \
+		-e LITEFAAS_CONTAINERD_SOCKET=/run/containerd/containerd.sock \
+		-e LITEFAAS_DB_PATH=/var/lib/litefaas/functions.db \
+		-e LITEFAAS_PORT=8080 \
+		-e LITEFAAS_LOG_LEVEL=info \
+		-e LITEFAAS_LOG_FORMAT=json \
+		$(DOCKER_IMAGE)
+	@echo "LiteFaaS is running in production mode on http://localhost:8080"
+	@echo "Container name: litefaas-prod"
+	@echo "Use 'make stop' to stop the container"
 
 # Run in development mode
 dev: build
@@ -70,6 +86,18 @@ docker-run:
 	docker-compose up -d
 	@echo "LiteFaaS is running on http://localhost:8080"
 
+# Stop production container
+stop:
+	@echo "Stopping LiteFaaS production container..."
+	docker stop litefaas-prod 2>/dev/null || echo "Container not running"
+	docker rm litefaas-prod 2>/dev/null || echo "Container not found"
+	@echo "LiteFaaS production container stopped"
+
+# Show production container logs
+logs:
+	@echo "Showing LiteFaaS production container logs..."
+	docker logs -f litefaas-prod
+
 # Stop Docker Compose
 docker-stop:
 	@echo "Stopping LiteFaaS..."
@@ -108,8 +136,10 @@ help:
 	@echo "  build         - Build the application"
 	@echo "  clean         - Clean build artifacts"
 	@echo "  test          - Run tests"
-	@echo "  run           - Build and run locally"
+	@echo "  run           - Build and run in production container"
 	@echo "  dev           - Build and run in development mode"
+	@echo "  stop          - Stop production container"
+	@echo "  logs          - Show production container logs"
 	@echo "  test-api      - Test API endpoints (basic)"
 	@echo "  test-complete - Test API endpoints (complete)"
 	@echo "  test-web      - Test web interface"
